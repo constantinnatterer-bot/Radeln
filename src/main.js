@@ -45,6 +45,9 @@ function bindProfile() {
   const showDiff = () => ($('#difficulty-val').textContent = `${diff.value} %`);
   showDiff();
   diff.addEventListener('input', () => { store.settings.difficulty = Number(diff.value); showDiff(); store.save(); });
+  const shifting = $('#shifting');
+  shifting.checked = store.settings.shifting;
+  shifting.addEventListener('change', () => { store.settings.shifting = shifting.checked; store.save(); });
   const bots = $('#bot-count');
   bots.value = store.settings.bots;
   const showBots = () => ($('#bots-val').textContent = bots.value);
@@ -257,6 +260,8 @@ function startRide() {
     botCount: store.settings.bots,
     difficulty: store.settings.difficulty,
     cameraIndex: store.settings.camera,
+    shifting: store.settings.shifting,
+    gear: store.settings.gear,
   });
   ride.start();
 }
@@ -266,6 +271,7 @@ function endRide() {
   const result = ride.stop();
   store.settings.camera = ride.camIndex;
   const route = ride.route, workout = ride.workout;
+  if (result.gear !== undefined) store.settings.gear = result.gear;
   ride = null;
   world.clear();
   const stats = computeStats(result.samples, { ftp: store.profile.ftp, weight: store.profile.weight });

@@ -4,6 +4,7 @@ import { RiderPhysics, draftFactor } from './physics.js';
 import { createRider } from './riders.js';
 import { expand, targetAt } from './workouts.js';
 import { mulberry32, clamp, fmtTime } from './util.js';
+import { VirtualShifter, SENT_CRR } from './shifting.js';
 
 const BOT_NAMES = ['Lena', 'Jonas', 'Mia', 'Felix', 'Hannah', 'Lukas', 'Emma', 'Paul', 'Sophie', 'Max', 'Clara', 'Elias',
   'Ida', 'Noah', 'Greta', 'Tim', 'Ella', 'Ben', 'Frida', 'Anton', 'Mila', 'Leon', 'Ronja', 'Karl'];
@@ -31,7 +32,7 @@ class Bot {
 }
 
 export class Ride {
-  constructor({ world, hud, route, workout, profile, devices, botCount, difficulty, cameraIndex = 0, onEnd }) {
+  constructor({ world, hud, route, workout, profile, devices, botCount, difficulty, cameraIndex = 0, shifting = true, gear, onEnd }) {
     Object.assign(this, { world, hud, route, workout, profile, devices, onEnd });
     this.difficulty = difficulty / 100;
     this.simulator = !devices.hasTrainer;
@@ -40,6 +41,9 @@ export class Ride {
     this.state = { dist: 0, lane: 0.8, elapsed: 0, elevGain: 0, power: 0, cadence: 0, hr: 0, speed: 0, grade: 0, draft: 0, lap: 1 };
     this.simPower = Math.round(profile.ftp * 0.6);
     this.ergBias = 1;
+    // Virtuelles Schalten: im Simulator immer möglich, mit Trainer nur bei steuerbarem FTMS
+    this.shifter = shifting && (this.simulator || devices.canControl) ? new VirtualShifter(gear) : null;
+    this._shiftPending = false;
     this.samples = [];
     this.camIndex = cameraIndex;
     this.paused = false;
@@ -66,7 +70,9 @@ export class Ride {
     this.me = createRider({ jersey: this.profile.jersey, helmet: this.profile.helmet });
     this.world.scene.add(this.me.group);
     for (const b of this.bots) this.world.scene.add(b.model.group);
-    this.hud.setup(this.route, this.workout, this.profile.ftp, this.simulator);
+    this.hud.setup(this.route, this.workout, this.profile.ftp, this.simulator, this.shifter);
+    this._onGearBtn = (e) => { const b = e.target.closest('[data-shift]'); if (b) this.shift(Number(b.dataset.shift)); };
+    document.querySelector('#gear-controls').addEventListener('click', this._onGearBtn);
     this.hud.el.simPower.value = this.simPower;
     this._bindKeys();
     this.hud.toast(this.simulator
@@ -103,11 +109,33 @@ export class Ride {
       else if (k === 'c' || k === 'C') this.cycleCamera();
       else if (k === 'p' || k === 'P' || k === ' ') { e.preventDefault(); this.togglePause(); }
       else if (k === 'h' || k === 'H') document.querySelector('#hud').classList.toggle('minimal');
+      else if (k === '+' || k === '=' || k === ']' || k === 'PageUp') { e.preventDefault(); this.shift(1); }
+      else if (k === '-' || k === '[' || k === 'PageDown') { e.preventDefault(); this.shift(-1); }
+      else if (k === 'd' || k === 'D') this.hud.toggleDebug();
     };
     window.addEventListener('keydown', this._onKey);
     this._onSim = (e) => { this.simPower = Number(e.target.value); };
     this.hud.el.simLabel.textContent = `${this.simPower} W`;
     this.hud.el.simPower.addEventListener('input', this._onSim);
+  }
+
+  /** Virtuell schalten: +1 = schwerer, -1 = leichter. */
+  shift(dir) {
+    if (!this.shifter) {
+      this.hud.toast('Virtuelles Schalten ist im Menü unter „Geräte“ deaktiviert.', 2000);
+      return;
+    }
+    if (this._ergActive()) {
+      this.hud.toast('Im ERG-Modus gibt der Trainer die Leistung vor – Schalten ist pausiert.', 2000);
+      return;
+    }
+    const changed = dir > 0 ? this.shifter.shiftUp() : this.shifter.shiftDown();
+    if (changed) this._shiftPending = true;
+    this.hud.updateGear(this.shifter, changed ? dir : 0);
+  }
+
+  _ergActive() {
+    return !!this.blocks && !this.workoutDone && this._woInfo?.fraction != null;
   }
 
   cycleCamera() {
@@ -144,22 +172,45 @@ export class Ride {
     // Leistungsquelle
     if (this.simulator) {
       s.power = target !== null ? target : this.simPower;
-      s.cadence = s.power > 0 ? 82 + Math.sin(s.elapsed / 7) * 4 + s.power / 60 : 0;
+      if (this.shifter && !this._ergActive()) {
+        // Trittfrequenz ergibt sich aus Geschwindigkeit und Gang
+        s.cadence = s.power > 0 ? clamp(this.shifter.cadenceFor(s.speed), 45, 140) : 0;
+      } else {
+        s.cadence = s.power > 0 ? 82 + Math.sin(s.elapsed / 7) * 4 + s.power / 60 : 0;
+      }
       s.hr = s.power > 0 ? Math.min(195, 70 + (s.power / this.profile.ftp) * 85 + Math.sin(s.elapsed / 30) * 3) : 0;
     } else {
       const d = this.devices.read();
       s.power = d.power; s.cadence = d.cadence; s.hr = d.hr;
+      this._trainerSpeed = d.speed;
     }
     if (this.devices.hrDevice) s.hr = this.devices.read().hr;
 
-    // Trainer steuern (max. 1×/s)
+    // Trainer steuern
     const now = performance.now();
-    if (this.devices.canControl && now - this._lastControl > 1000) {
-      this._lastControl = now;
+    if (this.devices.canControl) {
       if (target !== null) {
-        const w = Math.round(target);
-        if (this._lastSent !== `p${w}`) { this.devices.setTargetPower(w); this._lastSent = `p${w}`; }
-      } else {
+        // ERG: max. 1×/s
+        if (now - this._lastControl > 1000) {
+          this._lastControl = now;
+          const w = Math.round(target);
+          if (this._lastSent !== `p${w}`) { this.devices.setTargetPower(w); this._lastSent = `p${w}`; }
+        }
+      } else if (this.shifter) {
+        // Virtuelles Schalten: Ersatzsteigung bis 4×/s, nach einem Schaltvorgang sofort
+        const res = this.shifter.trainerGrade({
+          cadence: s.cadence, trainerSpeed: this._trainerSpeed || 0,
+          grade: s.grade * this.difficulty, mass: this.physics.totalMass, draft: s.draft,
+        });
+        const g = Math.round(res.grade * 1000) / 1000;
+        if (this._shiftPending || (now - this._lastControl > 250 && this._lastSent !== `v${g}`)) {
+          this._lastControl = now;
+          this._shiftPending = false;
+          this.devices.setSimulation(g, { cw: 0, crr: SENT_CRR });
+          this._lastSent = `v${g}`;
+        }
+      } else if (now - this._lastControl > 1000) {
+        this._lastControl = now;
         const g = Math.round(s.grade * this.difficulty * 1000) / 1000;
         if (this._lastSent !== `g${g}`) { this.devices.setSimulation(g); this._lastSent = `g${g}`; }
       }
@@ -327,7 +378,9 @@ export class Ride {
     this._hudAcc += dt;
     if (this._hudAcc > 0.1) {
       this._hudAcc = 0;
-      const modeLabel = this.simulator ? 'Simulator' : this.blocks && !this.workoutDone && this.devices.canControl ? 'ERG' : this.devices.canControl ? `Sim ${Math.round(this.difficulty * 100)} %` : 'Leistungsmesser';
+      const modeLabel = this.simulator ? 'Simulator' : this._ergActive() && this.devices.canControl ? 'ERG' : this.devices.canControl ? `Sim ${Math.round(this.difficulty * 100)} %${this.shifter ? ' · Schalten' : ''}` : 'Leistungsmesser';
+      if (this.shifter) this.hud.updateGear(this.shifter, 0, this._ergActive());
+      this.hud.updateDebug(this);
       this.hud.update({ ...s, weight: this.profile.weight, modeLabel });
       if (this.simulator) this.hud.el.simLabel.textContent = this.blocks && !this.workoutDone ? `Training ${Math.round(this.ergBias * 100)} %` : `${this.simPower} W`;
       if (this.blocks) this.hud.updateWorkout(this._woInfo, s.elapsed, s.power, this.profile.ftp);
@@ -349,6 +402,7 @@ export class Ride {
   stop() {
     cancelAnimationFrame(this._raf);
     window.removeEventListener('keydown', this._onKey);
+    document.querySelector('#gear-controls').removeEventListener('click', this._onGearBtn);
     this.hud.el.simPower.removeEventListener('input', this._onSim);
     if (this.devices.canControl) this.devices.setSimulation(0);
     document.querySelector('#pause-overlay').hidden = true;
@@ -357,6 +411,7 @@ export class Ride {
       startTime: this.startTime || new Date(),
       segmentResults: this.segmentResults,
       workoutDone: this.workoutDone,
+      gear: this.shifter?.gear,
     };
   }
 }

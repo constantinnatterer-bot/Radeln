@@ -1,6 +1,7 @@
 // Head-up-Display während der Fahrt.
 import { fmtTime, fmtKm, zoneFor } from './util.js';
 import { drawWorkout, totalDuration } from './workouts.js';
+import { WHEEL_CIRC } from './shifting.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -14,13 +15,18 @@ export class HUD {
       wo: $('#workout-panel'), woName: $('#wo-name'), woTarget: $('#wo-target'), woRemain: $('#wo-remain'), woNext: $('#wo-next'),
       woGraph: $('#wo-graph'), seg: $('#segment-panel'), toast: $('#toast'), sim: $('#sim-panel'),
       simPower: $('#sim-power'), simLabel: $('#sim-label'), mode: $('#m-mode'),
+      gearBox: $('#gear-box'), gear: $('#m-gear'), gearBar: $('#m-gear-bar'), gearRatio: $('#m-gear-ratio'),
+      gearControls: $('#gear-controls'), debug: $('#debug-panel'),
     };
     this.profileCanvas = $('#profile');
     this.minimap = $('#minimap');
     this._toastTimer = null;
   }
 
-  setup(route, workout, ftp, simulator) {
+  setup(route, workout, ftp, simulator, shifter = null) {
+    this.el.gearBox.hidden = !shifter;
+    this.el.gearControls.hidden = !shifter;
+    if (shifter) this.updateGear(shifter, 0);
     this.route = route;
     this.workout = workout;
     this.ftp = ftp;
@@ -189,6 +195,58 @@ export class HUD {
     this.el.riders.innerHTML = list
       .map((r) => `<li class="${r.me ? 'me' : ''}"><span class="dot" style="background:${r.color}"></span><span class="nm">${r.name}</span><span class="gap">${r.me ? '' : (r.gap > 0 ? '+' : '−') + Math.abs(r.gap).toFixed(0) + ' m'}</span><span class="wkg">${r.wkg.toFixed(1)}</span></li>`)
       .join('');
+  }
+
+  updateGear(shifter, dir = 0, paused = false) {
+    const e = this.el;
+    e.gear.textContent = shifter.gear + 1;
+    e.gearRatio.textContent = paused ? 'ERG' : `${(shifter.ratio * WHEEL_CIRC).toFixed(1)} m/U`;
+    e.gearBar.style.width = `${((shifter.gear + 1) / shifter.count) * 100}%`;
+    e.gearBox.classList.toggle('paused', paused);
+    if (dir) {
+      e.gearBox.classList.remove('up', 'down');
+      void e.gearBox.offsetWidth; // Animation neu starten
+      e.gearBox.classList.add(dir > 0 ? 'up' : 'down');
+    }
+  }
+
+  toggleDebug() {
+    this.el.debug.hidden = !this.el.debug.hidden;
+  }
+
+  /** Diagnosewerte für den Test mit echter Hardware. */
+  updateDebug(ride) {
+    const el = this.el.debug;
+    if (el.hidden) return;
+    const d = ride.devices;
+    const raw = d.read();
+    const v = ride.shifter?.last;
+    const rows = [
+      ['Trainer', d.trainer ? `${d.trainer.device.name || '?'} (${d.trainer.type}${d.canControl ? ', steuerbar' : ''})` : '– (Simulator)'],
+      ['Leistung', `${Math.round(raw.power)} W`],
+      ['Trittfrequenz', `${Math.round(raw.cadence)} U/min`],
+      ['Trainer-Tempo', `${(raw.speed * 3.6).toFixed(1)} km/h`],
+      ['Puls', `${raw.hr || '–'}`],
+    ];
+    if (ride.shifter) {
+      const sh = ride.shifter;
+      rows.push(
+        ['Gang', `${sh.gear + 1}/${sh.count} · Übersetzung ${sh.ratio.toFixed(2)}`],
+        ['Phys. Übersetzung', `${sh.physRatio.toFixed(2)} (${sh.physRatioSamples ? 'gelernt' : 'angenommen'})`],
+      );
+      if (v) rows.push(
+        ['Virtuelles Tempo', `${(v.vv * 3.6).toFixed(1)} km/h`],
+        ['Faktor k', v.k.toFixed(2)],
+        ['Gesendete Steigung', `${(v.grade * 100).toFixed(1)} %`],
+      );
+    }
+    rows.push(
+      ['Strecke', `${(ride.state.grade * 100).toFixed(1)} % · Steigungsgefühl ${Math.round(ride.difficulty * 100)} %`],
+      ['Letzter Befehl', d.lastCommand ? `${d.lastCommand.label} (vor ${((Date.now() - d.lastCommand.at) / 1000).toFixed(1)} s)` : '–'],
+      ['Befehle gesamt', `${d.commandCount || 0}`],
+    );
+    if (d.lastError) rows.push(['Fehler', d.lastError]);
+    el.innerHTML = `<b>Diagnose</b> <small>(D schließt)</small><table>${rows.map(([k, x]) => `<tr><td>${k}</td><td>${x}</td></tr>`).join('')}</table>`;
   }
 
   setSegment(text) {

@@ -101,7 +101,10 @@ export class Devices extends EventTarget {
     this.lastPowerAt = 0;
     this.lastHrAt = 0;
     this._cad = new CadenceCalc();
-    this._queue = Promise.resolve();
+    this.speed = 0; // km/h vom Trainer
+    this._busy = false;
+    this._pending = null;
+    this.lastCommand = null;
     this._controlGranted = false;
   }
 
@@ -190,6 +193,7 @@ export class Devices extends EventTarget {
     const r = parseIndoorBikeData(dv);
     if (r.power !== undefined) { this.power = Math.max(0, r.power); this.lastPowerAt = Date.now(); }
     if (r.cadence !== undefined) { this.cadence = r.cadence; this._ftmsCadence = true; }
+    if (r.speed !== undefined) this.speed = r.speed;
     if (r.hr && !this.hrDevice) { this.hr = r.hr; this.lastHrAt = Date.now(); }
     this._emit('data', r);
   }
@@ -202,34 +206,54 @@ export class Devices extends EventTarget {
     this._emit('data', { power: this.power, cadence: this.cadence });
   }
 
-  /** Aktuelle Werte; veraltete Werte (> 3 s) werden als 0 gewertet. */
+  /** Aktuelle Werte; veraltete Werte (> 3 s) werden als 0 gewertet. speed in m/s (nur FTMS). */
   read() {
     const now = Date.now();
+    const fresh = now - this.lastPowerAt < 3000;
     return {
-      power: now - this.lastPowerAt < 3000 ? this.power : 0,
-      cadence: now - this.lastPowerAt < 3000 ? this.cadence : 0,
+      power: fresh ? this.power : 0,
+      cadence: fresh ? this.cadence : 0,
+      speed: fresh ? this.speed / 3.6 : 0,
       hr: now - this.lastHrAt < 5000 ? this.hr : 0,
     };
   }
 
-  _write(buffer) {
-    if (!this.canControl) return Promise.resolve();
+  /**
+   * Schreibt auf den FTMS Control Point. Befehle werden zusammengefasst:
+   * Läuft gerade ein Schreibvorgang, wird nur der jeweils neueste Befehl nachgeschickt.
+   * So staut sich beim schnellen Schalten nichts auf.
+   */
+  _write(buffer, label) {
+    if (!this.canControl) return;
+    this._pending = { buffer, label };
+    if (this._busy) return;
+    this._busy = true;
     const cp = this.trainer.cp;
-    this._queue = this._queue
-      .then(async () => {
+    (async () => {
+      try {
         if (!this._controlGranted) {
           await cp.writeValue(new Uint8Array([0x00])); // Request Control
           await cp.writeValue(new Uint8Array([0x07])); // Start/Resume
           this._controlGranted = true;
         }
-        await cp.writeValue(buffer);
-      })
-      .catch((err) => console.warn('FTMS-Schreibfehler', err));
-    return this._queue;
+        while (this._pending) {
+          const { buffer: b, label: l } = this._pending;
+          this._pending = null;
+          await cp.writeValue(b);
+          this.lastCommand = { label: l, at: Date.now() };
+          this.commandCount = (this.commandCount || 0) + 1;
+        }
+      } catch (err) {
+        console.warn('FTMS-Schreibfehler', err);
+        this.lastError = String(err?.message || err);
+      } finally {
+        this._busy = false;
+      }
+    })();
   }
 
-  setTargetPower(watts) { return this._write(encodeTargetPower(watts)); }
-  setSimulation(grade, opts) { return this._write(encodeSimulation(grade, opts)); }
+  setTargetPower(watts) { this._write(encodeTargetPower(watts), `ERG ${Math.round(watts)} W`); }
+  setSimulation(grade, opts) { this._write(encodeSimulation(grade, opts), `Sim ${(grade * 100).toFixed(1)} %`); }
 
   disconnectAll() {
     try { this.trainer?.device.gatt.disconnect(); } catch { /* ignore */ }

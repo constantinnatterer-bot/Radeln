@@ -9,6 +9,7 @@ strukturierte Trainings, Bergwertungen und eine Auswertung nach jeder Fahrt.
 | Bereich | Was es kann |
 |---|---|
 | **Smart-Trainer** | Bluetooth-Kopplung über offene Standards (FTMS, Cycling Power, Heart Rate). Im **Simulationsmodus** stellt der Trainer die Steigung der Strecke nach, im **ERG-Modus** gibt er die Zielleistung des Trainings vor. |
+| **Virtuelles Schalten** | 24 virtuelle Gänge für jeden steuerbaren FTMS-Trainer, auch mit nur einem Ritzel (z. B. Zwift Cog). Schalten per Taste, Bildschirm-Button oder Zwift Click über BikeControl. |
 | **Steigungsgefühl** | Regler von 0 bis 100 %, mit dem sich die Steigungssimulation abschwächen lässt |
 | **Simulator** | Ohne Gerät steuerst du die Leistung mit den Pfeiltasten oder dem Regler, praktisch zum Ausprobieren |
 | **Physik** | Geschwindigkeit aus Leistung, Gewicht, Luft- und Rollwiderstand sowie Steigung, inklusive **Windschatten** (bis −32 %) |
@@ -41,6 +42,8 @@ nur über `https://` oder `localhost`.
 |---|---|
 | `↑` / `↓` | Leistung ±10 W (Simulator, mit Shift ±50 W) bzw. Trainingsintensität ±1 % |
 | `←` / `→` | Spur wechseln (für den Windschatten) |
+| `+` / `−` (auch `]` / `[`, Bild↑/Bild↓) | Schwerer / leichter schalten |
+| `D` | Diagnose-Panel (Trainerwerte, gesendete Befehle) |
 | `C` | Kamera wechseln |
 | `P` / Leertaste | Pause |
 | `H` | HUD reduzieren |
@@ -53,6 +56,41 @@ nur über `https://` oder `localhost`.
 `10m 65%` steht für einen konstanten Block, `5m 50-80%` für eine Rampe, `3x(...)` für Wiederholungen und
 `frei` für einen Block ohne Vorgabe. Als Einheiten gehen `s`, `m` und `h`. Prozentwerte beziehen sich auf deine FTP.
 
+## Virtuelles Schalten
+
+Der Trainer kennt nur seine feste Übersetzung (z. B. Kettenblatt / Cog). Radeln rechnet aus Trittfrequenz
+und gewähltem virtuellem Gang das virtuelle Tempo aus und schickt dem Trainer über FTMS eine
+**Ersatzsteigung**. Damit musst du genau die Leistung treten, die du in diesem Gang auf der Straße
+bräuchtest. Die physische Übersetzung lernt die App aus Trittfrequenz und dem vom Trainer gemeldeten Tempo.
+
+- Funktioniert nur im **Simulationsmodus** (Freie Fahrt bzw. freie Blöcke). Im ERG-Modus gibt der Trainer die Leistung vor, dort ist Schalten pausiert.
+- Ein- und ausschalten lässt es sich im Menü unter **Geräte → Virtuelles Schalten**. Der zuletzt gefahrene Gang wird gespeichert.
+- Die Steuerung ist unabhängig von Zwift-Protokollen, sie nutzt nur den offenen FTMS-Standard.
+
+### Zwift Click (oder andere Controller) verwenden
+
+Der Click spricht ein nicht veröffentlichtes Protokoll. Am einfachsten verbindest du ihn über die
+Open-Source-App [BikeControl](https://github.com/jonasbark/swiftcontrol) und legst die Tasten so:
+
+| Click-Taste | Taste in Radeln |
+|---|---|
+| Plus (schwerer) | `+` oder `]` |
+| Minus (leichter) | `-` oder `[` |
+
+Radeln muss dabei das aktive Fenster sein.
+
+### Checkliste für den ersten Test mit echtem Gerät
+
+1. In Chrome oder Edge `npm run dev` starten und http://localhost:5173 öffnen.
+2. Unter **Geräte** den Trainer koppeln. Der Status sollte „FTMS, steuerbar“ anzeigen.
+3. Freie Fahrt auf der **Seeufer-Runde** starten und mit `D` das Diagnose-Panel öffnen.
+4. Prüfen:
+   - Werden *Trainer-Tempo* und *Trittfrequenz* angezeigt?
+   - Steht *Phys. Übersetzung* nach etwa 10 s auf „gelernt“, mit einem plausiblen Wert (z. B. 50/14 ≈ 3,57)?
+   - Ändern sich *Gesendete Steigung* und spürbar der Widerstand beim Schalten mit `+` und `−`?
+   - Steigt die Leistung bei gleicher Trittfrequenz im schwereren Gang?
+5. Falls sich das Schalten zu schwach oder zu stark anfühlt, mit dem **Steigungsgefühl** gegensteuern und mir die Werte aus dem Diagnose-Panel schicken. Trainer rechnen intern teils mit einem anderen Fahrergewicht, das muss eventuell nachkalibriert werden.
+
 ## Projektstruktur
 
 ```
@@ -63,6 +101,7 @@ src/
   riders.js     Low-Poly-Fahrermodell mit Tretanimation
   route.js      Prozedurale Rundkurse und Höhenprofile
   physics.js    Fahrphysik und Windschatten
+  shifting.js   Virtuelles Schalten (Gänge, Ersatzsteigung)
   ble.js        Web-Bluetooth: FTMS / Cycling Power / Herzfrequenz
   workouts.js   Trainingsvorlagen, Import, Kurzschreibweise
   stats.js      NP, IF, TSS, Bestwerte, XP/Level

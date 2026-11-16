@@ -44,6 +44,8 @@
           <button id="btn-hr">Herzfrequenz koppeln</button>
           <span id="st-hr" class="status">nicht verbunden</span>
         </div>
+        <label class="check"><input id="shifting" type="checkbox" /> Virtuelles Schalten (24 Gänge)</label>
+        <p class="hint">Für Trainer mit nur einem Ritzel oder ohne Schaltung. Funktioniert mit jedem steuerbaren FTMS-Trainer. Schalten mit <kbd>+</kbd>/<kbd>−</kbd> (auch <kbd>]</kbd>/<kbd>[</kbd>), z. B. per Zwift Click über BikeControl.</p>
         <label>Steigungsgefühl <span id="difficulty-val"></span>
           <input id="difficulty" type="range" min="0" max="100" step="5" />
         </label>
@@ -60,7 +62,8 @@
         <ul class="keys">
           <li><kbd>↑</kbd><kbd>↓</kbd> Leistung (Simulator) / Intensität (Training)</li>
           <li><kbd>←</kbd><kbd>→</kbd> Spur wechseln</li>
-          <li><kbd>C</kbd> Kamera · <kbd>P</kbd> Pause · <kbd>H</kbd> HUD</li>
+          <li><kbd>+</kbd><kbd>−</kbd> schalten (schwerer/leichter)</li>
+          <li><kbd>C</kbd> Kamera · <kbd>P</kbd> Pause · <kbd>H</kbd> HUD · <kbd>D</kbd> Diagnose</li>
         </ul>
       </div>
 
@@ -108,6 +111,7 @@
         <div class="metric"><span id="m-wkg">0.0</span><small>W/kg</small></div>
         <div class="metric"><span id="m-hr">–</span><small>♥ bpm</small></div>
         <div class="metric"><span id="m-cad">–</span><small>U/min</small></div>
+        <div id="gear-box" class="metric gear" hidden><span id="m-gear">10</span><small>Gang · <i id="m-gear-ratio"></i></small><div class="gear-bar"><i id="m-gear-bar"></i></div></div>
         <div id="power-zone" class="zone"></div>
       </div>
       <div class="hud-left panel">
@@ -135,6 +139,11 @@
         <input id="sim-power" type="range" min="0" max="800" step="5" />
       </div>
       <div class="hud-bottom panel"><canvas id="profile"></canvas></div>
+      <div id="gear-controls" class="gear-controls" hidden>
+        <button class="ghost" data-shift="-1" title="Leichter (− oder [)">−</button>
+        <button class="ghost" data-shift="1" title="Schwerer (+ oder ])">+</button>
+      </div>
+      <div id="debug-panel" class="debug panel" hidden></div>
       <div class="hud-controls">
         <button id="btn-cam" class="ghost" title="Kamera (C)">🎥</button>
         <button id="btn-pause" class="ghost" title="Pause (P)">⏸</button>

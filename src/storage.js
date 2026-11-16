@@ -3,7 +3,7 @@ const KEY = 'radeln.v1';
 
 const DEFAULTS = {
   profile: { name: 'Fahrer:in', weight: 75, ftp: 200, jersey: '#19c3a6', helmet: '#ffffff' },
-  settings: { difficulty: 50, bots: 10, route: 'seeufer', camera: 0 },
+  settings: { difficulty: 50, bots: 10, route: 'seeufer', camera: 0, shifting: true, gear: 9 },
   history: [],
   bests: {}, // Segment-Bestzeiten: { [segmentId]: sekunden }
   xp: 0,
