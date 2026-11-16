@@ -1,0 +1,19 @@
+{
+  "name": "radeln",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Virtuelles Indoor-Radtraining im Browser – Smart-Trainer, Trainingspläne, 3D-Strecken.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "vite": "5.4.21"
+  }
+}

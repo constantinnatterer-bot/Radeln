@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radeln – Indoor-Radtraining</title>
+  <meta name="description" content="Virtuelles Indoor-Radtraining im Browser: Smart-Trainer per Bluetooth, strukturierte Trainings, 3D-Strecken." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='18' cy='42' r='12' fill='none' stroke='%2319c3a6' stroke-width='5'/><circle cx='46' cy='42' r='12' fill='none' stroke='%2319c3a6' stroke-width='5'/><path d='M18 42 L28 20 L40 20 L46 42 M28 20 L34 42' stroke='%23fff' stroke-width='4' fill='none'/></svg>" />
+</head>
+<body>
+  <!-- ======================= MENÜ ======================= -->
+  <section id="menu" class="screen">
+    <header class="brand">
+      <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><circle cx="18" cy="42" r="12" /><circle cx="46" cy="42" r="12" /><path d="M18 42 L28 20 L40 20 L46 42 M28 20 L34 42" /></svg>
+      <div>
+        <h1>Radeln</h1>
+        <p class="tag">Virtuelles Indoor-Radtraining</p>
+      </div>
+      <div id="level-badge" class="level-badge"></div>
+    </header>
+
+    <div class="menu-grid">
+      <div class="card">
+        <h2>Profil</h2>
+        <label>Name <input id="p-name" maxlength="20" /></label>
+        <div class="row">
+          <label>Gewicht (kg) <input id="p-weight" type="number" min="30" max="200" step="0.5" /></label>
+          <label>FTP (W) <input id="p-ftp" type="number" min="50" max="600" step="1" /></label>
+        </div>
+        <div class="row">
+          <label>Trikot <input id="p-jersey" type="color" /></label>
+          <label>Helm <input id="p-helmet" type="color" /></label>
+        </div>
+        <p class="hint">FTP = Leistung, die du etwa eine Stunde halten kannst. Unbekannt? Mach den Rampentest.</p>
+      </div>
+
+      <div class="card">
+        <h2>Geräte</h2>
+        <div class="device">
+          <button id="btn-trainer">Smart-Trainer / Powermeter koppeln</button>
+          <span id="st-trainer" class="status">nicht verbunden</span>
+        </div>
+        <div class="device">
+          <button id="btn-hr">Herzfrequenz koppeln</button>
+          <span id="st-hr" class="status">nicht verbunden</span>
+        </div>
+        <label>Steigungsgefühl <span id="difficulty-val"></span>
+          <input id="difficulty" type="range" min="0" max="100" step="5" />
+        </label>
+        <p class="hint" id="bt-hint">Ohne Gerät fährst du im Simulator-Modus und steuerst die Leistung mit den Pfeiltasten.</p>
+      </div>
+
+      <div class="card">
+        <h2>Mitfahrer</h2>
+        <label>Anzahl Computer-Fahrer <span id="bots-val"></span>
+          <input id="bot-count" type="range" min="0" max="24" step="1" />
+        </label>
+        <p class="hint">Fahr hinter anderen her, um Windschatten zu nutzen (bis zu 32 % weniger Luftwiderstand). Etwa die Hälfte passt sich deinem Tempo an.</p>
+        <h3>Tastatur</h3>
+        <ul class="keys">
+          <li><kbd>↑</kbd><kbd>↓</kbd> Leistung (Simulator) / Intensität (Training)</li>
+          <li><kbd>←</kbd><kbd>→</kbd> Spur wechseln</li>
+          <li><kbd>C</kbd> Kamera · <kbd>P</kbd> Pause · <kbd>H</kbd> HUD</li>
+        </ul>
+      </div>
+
+      <div class="card wide">
+        <h2>Strecke</h2>
+        <div id="route-list" class="tile-list"></div>
+      </div>
+
+      <div class="card wide">
+        <h2>Training</h2>
+        <div id="workout-list" class="tile-list"></div>
+        <div class="row actions">
+          <label class="file-btn">Datei importieren (.zwo/.json)<input id="wo-import" type="file" accept=".zwo,.xml,.json" hidden /></label>
+          <button id="btn-builder" class="ghost">Eigenes Training bauen</button>
+        </div>
+        <div id="builder" class="builder" hidden>
+          <label>Name <input id="b-name" value="Mein Training" /></label>
+          <label>Ablauf
+            <input id="b-dsl" value="10m 50-75%, 4x(4m 105%, 2m 55%), 8m 60-45%" />
+          </label>
+          <p class="hint">Blöcke durch Komma trennen: <code>10m 65%</code> (konstant), <code>5m 50-80%</code> (Rampe), <code>3x(1m 120%, 1m 50%)</code> (Wiederholung), <code>5m frei</code>. Einheiten: s, m, h.</p>
+          <canvas id="b-preview" width="600" height="80"></canvas>
+          <div class="row"><button id="b-save">Speichern</button><span id="b-error" class="error"></span></div>
+        </div>
+      </div>
+
+      <div class="card wide">
+        <h2>Verlauf</h2>
+        <div id="history"></div>
+      </div>
+    </div>
+
+    <footer class="startbar">
+      <div id="selection-summary"></div>
+      <button id="btn-start" class="primary big">Losfahren</button>
+    </footer>
+  </section>
+
+  <!-- ======================= FAHRT ======================= -->
+  <section id="game" class="screen" hidden>
+    <canvas id="view"></canvas>
+    <div id="hud">
+      <div class="hud-top">
+        <div class="metric big"><span id="m-power">0</span><small>W</small></div>
+        <div class="metric"><span id="m-wkg">0.0</span><small>W/kg</small></div>
+        <div class="metric"><span id="m-hr">–</span><small>♥ bpm</small></div>
+        <div class="metric"><span id="m-cad">–</span><small>U/min</small></div>
+        <div id="power-zone" class="zone"></div>
+      </div>
+      <div class="hud-left panel">
+        <div class="metric"><span id="m-speed">0</span><small>km/h</small></div>
+        <div class="metric"><span id="m-dist">0</span><small>km</small></div>
+        <div class="metric"><span id="m-time">0:00</span><small>Zeit</small></div>
+        <div class="metric"><span id="m-elev">0</span><small>Hm</small></div>
+        <div class="sub"><span id="m-lap"></span> · <span id="m-mode"></span></div>
+        <div id="m-draft" class="draft" hidden></div>
+      </div>
+      <div class="hud-right">
+        <div id="grade-box" class="grade"><span id="m-grade">0 %</span></div>
+        <canvas id="minimap"></canvas>
+        <ol id="riders-list" class="riders panel"></ol>
+      </div>
+      <div id="workout-panel" class="workout panel" hidden>
+        <div class="wo-head"><span id="wo-name"></span><span id="wo-remain"></span></div>
+        <div id="wo-target" class="wo-target"></div>
+        <canvas id="wo-graph"></canvas>
+        <div id="wo-next" class="sub"></div>
+      </div>
+      <div id="segment-panel" class="segment" hidden></div>
+      <div id="sim-panel" class="sim panel" hidden>
+        <span>Simulator · <b id="sim-label"></b></span>
+        <input id="sim-power" type="range" min="0" max="800" step="5" />
+      </div>
+      <div class="hud-bottom panel"><canvas id="profile"></canvas></div>
+      <div class="hud-controls">
+        <button id="btn-cam" class="ghost" title="Kamera (C)">🎥</button>
+        <button id="btn-pause" class="ghost" title="Pause (P)">⏸</button>
+        <button id="btn-end" class="ghost danger">Beenden</button>
+      </div>
+      <div id="toast" class="toast"></div>
+    </div>
+    <div id="pause-overlay" class="overlay" hidden><div>Pausiert<small>Weiter mit P oder Leertaste</small></div></div>
+  </section>
+
+  <!-- ======================= ZUSAMMENFASSUNG ======================= -->
+  <section id="summary" class="screen" hidden>
+    <div class="summary-wrap">
+      <h1 id="s-title">Fahrt beendet</h1>
+      <p id="s-sub" class="tag"></p>
+      <div id="s-grid" class="stat-grid"></div>
+      <canvas id="s-chart" width="1000" height="220"></canvas>
+      <div id="s-extra"></div>
+      <div class="row actions">
+        <button id="s-export">Als TCX exportieren</button>
+        <button id="s-back" class="primary">Zurück zum Menü</button>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
