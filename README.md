@@ -56,6 +56,38 @@ nur über `https://` oder `localhost`.
 `10m 65%` steht für einen konstanten Block, `5m 50-80%` für eine Rampe, `3x(...)` für Wiederholungen und
 `frei` für einen Block ohne Vorgabe. Als Einheiten gehen `s`, `m` und `h`. Prozentwerte beziehen sich auf deine FTP.
 
+## iPad und iPhone
+
+Safari (und jeder andere Browser auf iPadOS/iOS) unterstützt kein Web Bluetooth. Radeln läuft dort deshalb
+in der kostenlosen App **[Bluefy – Web BLE Browser](https://apps.apple.com/app/id1492822055)**, die Web Bluetooth nachrüstet.
+
+1. Radeln im Internet veröffentlichen (siehe unten). Bluetooth funktioniert nur über `https://`, eine Adresse im Heimnetz wie `http://192.168…` reicht nicht.
+2. Auf dem iPad Bluefy installieren, die Adresse öffnen und den Trainer unter **Geräte** koppeln.
+3. Öffnest du die Seite stattdessen in Safari, zeigt Radeln einen Hinweis mit der Adresse zum Kopieren.
+
+Für Tablets gibt es:
+- Touch-Bedienung mit großen Buttons:
+  - `+`/`−` zum Schalten, im ERG-Training für die Intensität und im Simulator für die Leistung
+  - Spurwechsel, Kamera, Diagnose, Vollbild und Pause
+- ein Layout für Hoch- und Querformat, das die sicheren Bildschirmränder berücksichtigt
+- Display bleibt während der Fahrt an (Screen Wake Lock)
+- App-Icon für den Home-Bildschirm
+
+**Einschränkungen:**
+- Ob Bluefy mit jedem Trainer zuverlässig verbindet, muss sich im Test zeigen.
+- Der Zwift Click über BikeControl funktioniert auf dem iPad sehr wahrscheinlich nicht, weil iOS Apps keine Tastendrücke an andere Apps senden lässt. Am iPad schaltest du über die Bildschirm-Buttons oder eine Bluetooth-Tastatur.
+- Eine echte iPad-App (Capacitor) ließe sich später auch ohne eigenen Mac bauen, über einen macOS-Build-Dienst (z. B. GitHub Actions). Dafür ist aber das Apple-Entwicklerprogramm (99 €/Jahr) nötig.
+
+### Veröffentlichen mit GitHub Pages
+
+Der Workflow `.github/workflows/pages.yml` testet, baut und veröffentlicht die App bei jedem Push auf `main`.
+
+1. Auf GitHub unter **Settings → Pages → Build and deployment → Source** den Eintrag **GitHub Actions** wählen.
+2. Den Entwicklungszweig in `main` mergen (oder den Workflow unter **Actions** manuell starten).
+3. Die App ist dann unter `https://<benutzername>.github.io/<repo>/` erreichbar.
+
+Bei privaten Repositories setzt GitHub Pages einen kostenpflichtigen GitHub-Plan voraus. Außerdem ist die Seite öffentlich erreichbar, auch wenn das Repository privat ist. Alternativ lässt sich der Ordner `dist/` (`npm run build`) bei jedem anderen https-Hoster ablegen, z. B. Netlify oder Cloudflare Pages.
+
 ## Virtuelles Schalten
 
 Der Trainer kennt nur seine feste Übersetzung (z. B. Kettenblatt / Cog). Radeln rechnet aus Trittfrequenz

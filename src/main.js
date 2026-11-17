@@ -20,6 +20,24 @@ let hud = null;
 let ride = null;
 let lastRide = null;
 
+function isIOS() {
+  // iPadOS meldet sich als „Macintosh“, hat aber einen Touchscreen
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0);
+}
+
+function bindFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  const btn = $('#btn-fs');
+  if (!req) return;
+  btn.hidden = false;
+  btn.addEventListener('click', () => {
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fsEl) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else req.call(el).catch?.(() => {});
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Profil & Einstellungen
 function bindProfile() {
@@ -64,7 +82,22 @@ function renderLevel() {
 // Geräte
 function bindDevices() {
   if (!Devices.supported) {
-    $('#bt-hint').innerHTML = '⚠️ Dieser Browser unterstützt kein Web Bluetooth. Für Smart-Trainer bitte Chrome oder Edge (Desktop/Android) verwenden. Der Simulator-Modus funktioniert überall.';
+    if (isIOS()) {
+      const hint = $('#ios-hint');
+      hint.hidden = false;
+      hint.innerHTML = `<b>iPad / iPhone:</b> Safari kann keine Bluetooth-Geräte mit Webseiten verbinden.
+        Öffne Radeln in der kostenlosen App <a href="https://apps.apple.com/app/id1492822055" target="_blank" rel="noopener">Bluefy – Web BLE Browser</a>
+        und gib dort diese Adresse ein:<div class="row url-row"><code id="ios-url">${esc(location.href.split('#')[0])}</code><button id="ios-copy">Kopieren</button></div>`;
+      $('#ios-copy').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText($('#ios-url').textContent); $('#ios-copy').textContent = '✓ Kopiert'; }
+        catch { $('#ios-copy').textContent = 'Bitte manuell kopieren'; }
+      });
+      $('#bt-hint').textContent = 'Der Simulator-Modus funktioniert auch ohne Bluetooth.';
+    } else {
+      $('#bt-hint').innerHTML = '⚠️ Dieser Browser unterstützt kein Web Bluetooth. Für Smart-Trainer bitte Chrome oder Edge (Desktop/Android) verwenden. Der Simulator-Modus funktioniert überall.';
+    }
+  } else if (!window.isSecureContext) {
+    $('#bt-hint').innerHTML = '⚠️ Bluetooth funktioniert nur über eine sichere Verbindung (https:// oder localhost).';
   }
   $('#btn-trainer').addEventListener('click', async () => {
     try {
@@ -375,6 +408,10 @@ function init() {
   $('#btn-end').addEventListener('click', () => { if (confirm('Fahrt beenden?')) endRide(); });
   $('#btn-pause').addEventListener('click', () => ride?.togglePause());
   $('#btn-cam').addEventListener('click', () => ride?.cycleCamera());
+  $('#btn-lane-l').addEventListener('click', () => ride?.changeLane(-1));
+  $('#btn-lane-r').addEventListener('click', () => ride?.changeLane(1));
+  $('#btn-debug').addEventListener('click', () => hud?.toggleDebug());
+  bindFullscreen();
   $('#s-back').addEventListener('click', () => { renderLevel(); renderRoutes(); renderHistory(); show('#menu'); });
   $('#s-export').addEventListener('click', () => {
     if (!lastRide) return;

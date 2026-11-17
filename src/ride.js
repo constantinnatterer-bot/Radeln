@@ -71,12 +71,16 @@ export class Ride {
     this.world.scene.add(this.me.group);
     for (const b of this.bots) this.world.scene.add(b.model.group);
     this.hud.setup(this.route, this.workout, this.profile.ftp, this.simulator, this.shifter);
+    this._onResize = () => this.hud.relayout();
+    window.addEventListener('resize', this._onResize);
+    this._wakeLock();
     this._onGearBtn = (e) => { const b = e.target.closest('[data-shift]'); if (b) this.shift(Number(b.dataset.shift)); };
     document.querySelector('#gear-controls').addEventListener('click', this._onGearBtn);
     this.hud.el.simPower.value = this.simPower;
     this._bindKeys();
+    const touch = window.matchMedia?.('(pointer: coarse)').matches;
     this.hud.toast(this.simulator
-      ? 'Simulator-Modus: Leistung mit <kbd>↑</kbd>/<kbd>↓</kbd> oder dem Regler steuern'
+      ? (touch ? 'Simulator-Modus: Leistung mit dem Regler steuern' : 'Simulator-Modus: Leistung mit <kbd>↑</kbd>/<kbd>↓</kbd> oder dem Regler steuern')
       : `Verbunden mit ${this.devices.trainer.device.name || 'Trainer'} – viel Spaß!`, 5000);
     if (this.devices.canControl) this.devices.setSimulation(0);
     this._last = performance.now();
@@ -104,8 +108,8 @@ export class Ride {
           this.simPower = clamp(this.simPower + dir * (e.shiftKey ? 50 : 10), 0, 1500);
           this.hud.el.simPower.value = this.simPower;
         }
-      } else if (k === 'ArrowLeft') this.state.lane = clamp(this.state.lane - 1, -3, 3);
-      else if (k === 'ArrowRight') this.state.lane = clamp(this.state.lane + 1, -3, 3);
+      } else if (k === 'ArrowLeft') this.changeLane(-1);
+      else if (k === 'ArrowRight') this.changeLane(1);
       else if (k === 'c' || k === 'C') this.cycleCamera();
       else if (k === 'p' || k === 'P' || k === ' ') { e.preventDefault(); this.togglePause(); }
       else if (k === 'h' || k === 'H') document.querySelector('#hud').classList.toggle('minimal');
@@ -121,12 +125,17 @@ export class Ride {
 
   /** Virtuell schalten: +1 = schwerer, -1 = leichter. */
   shift(dir) {
-    if (!this.shifter) {
-      this.hud.toast('Virtuelles Schalten ist im Menü unter „Geräte“ deaktiviert.', 2000);
+    // Im ERG-Training: Intensität anpassen statt schalten
+    if (this._ergActive()) {
+      this.ergBias = clamp(this.ergBias + dir * 0.01, 0.5, 1.5);
+      this.hud.toast(`Trainingsintensität ${Math.round(this.ergBias * 100)} %`, 1200);
       return;
     }
-    if (this._ergActive()) {
-      this.hud.toast('Im ERG-Modus gibt der Trainer die Leistung vor – Schalten ist pausiert.', 2000);
+    if (!this.shifter) {
+      if (this.simulator) {
+        this.simPower = clamp(this.simPower + dir * 10, 0, 1500);
+        this.hud.el.simPower.value = this.simPower;
+      } else this.hud.toast('Virtuelles Schalten ist im Menü unter „Geräte“ deaktiviert.', 2000);
       return;
     }
     const changed = dir > 0 ? this.shifter.shiftUp() : this.shifter.shiftDown();
@@ -136,6 +145,21 @@ export class Ride {
 
   _ergActive() {
     return !!this.blocks && !this.workoutDone && this._woInfo?.fraction != null;
+  }
+
+  /** Bildschirm während der Fahrt nicht abschalten (Screen Wake Lock API). */
+  async _wakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    const acquire = async () => {
+      try { this._lock = await navigator.wakeLock.request('screen'); } catch { /* nicht erlaubt */ }
+    };
+    this._onVis = () => { if (document.visibilityState === 'visible' && this._raf) acquire(); };
+    document.addEventListener('visibilitychange', this._onVis);
+    await acquire();
+  }
+
+  changeLane(dir) {
+    this.state.lane = clamp(this.state.lane + dir, -3, 3);
   }
 
   cycleCamera() {
@@ -365,6 +389,8 @@ export class Ride {
     }
     const th = this.world.terrainHeight(desired.x, desired.z) + 0.8;
     if (desired.y < th) desired.y = th;
+    // bei großen Sprüngen (z. B. nach dem Aufwachen aus dem Hintergrund) direkt springen
+    if (this._camPos.distanceToSquared(desired) > 60 * 60) this._camInit = false;
     const k = this._camInit ? 1 - Math.exp(-dt * (this.camIndex === 1 ? 20 : 5)) : 1;
     this._camPos.lerp(desired, k);
     this._camLook.lerp(look, k);
@@ -402,6 +428,10 @@ export class Ride {
   stop() {
     cancelAnimationFrame(this._raf);
     window.removeEventListener('keydown', this._onKey);
+    window.removeEventListener('resize', this._onResize);
+    document.removeEventListener('visibilitychange', this._onVis);
+    this._lock?.release?.().catch(() => {});
+    this._lock = null;
     document.querySelector('#gear-controls').removeEventListener('click', this._onGearBtn);
     this.hud.el.simPower.removeEventListener('input', this._onSim);
     if (this.devices.canControl) this.devices.setSimulation(0);

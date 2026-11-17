@@ -25,7 +25,8 @@ export class HUD {
 
   setup(route, workout, ftp, simulator, shifter = null) {
     this.el.gearBox.hidden = !shifter;
-    this.el.gearControls.hidden = !shifter;
+    // +/− Tasten: schalten, im ERG-Training Intensität, im Simulator Leistung
+    this.el.gearControls.hidden = !(shifter || workout || simulator);
     if (shifter) this.updateGear(shifter, 0);
     this.route = route;
     this.workout = workout;
@@ -33,6 +34,13 @@ export class HUD {
     this.el.wo.hidden = !workout;
     this.el.sim.hidden = !simulator;
     if (workout) this.el.woName.textContent = workout.name;
+    this._prepareProfile();
+    this._prepareMinimap();
+  }
+
+  /** Nach Drehen des Geräts / Größenänderung die Canvas-Grafiken neu aufbauen. */
+  relayout() {
+    if (!this.route) return;
     this._prepareProfile();
     this._prepareMinimap();
   }
